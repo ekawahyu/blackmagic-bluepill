@@ -1,0 +1,60 @@
+name: build and upload
+
+# Controls when the workflow will run
+on:
+  # Build on sundays
+  schedule:
+    - cron: "47 3 * * 0"
+
+  # Triggers the workflow on push or pull request events but only for the main branch
+  push:
+    branches: [ main ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+        with:
+          repository: "blackmagic-debug/blackmagic"
+
+      - uses: actions/checkout@v3
+        with:
+          path: "bmp"
+
+      - name: Patch
+        run: patch -p1 -i bmp/blackmagic.patch
+
+      # Use embedded toolchain
+      - uses: numworks/setup-arm-toolchain@2020-q4
+
+      - name: Install BMDA dependencies
+        run: sudo apt-get -y install libusb-dev libftdi1-dev libhidapi-dev
+
+      - name: Build all platform firmwares and Linux BMDA
+        run: ENABLE_RTT=1 make all_platforms
+
+      - name: Archive firmware build artifacts as a zip
+        uses: actions/upload-artifact@v3
+        with:
+          name: blackmagic-firmware.zip
+          path: src/artifacts/*
+          if-no-files-found: error
+
+      - name: Zip
+        run: ( ln -s src/artifacts blackmagic-firmware; zip -r9 blackmagic-firmware.zip blackmagic-firmware/ )
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "blackmagic-firmware.zip"
+          tag: auto
+          token: ${{ secrets.GITHUB_TOKEN }}
+          allowUpdates: true
+
+# not truncated
